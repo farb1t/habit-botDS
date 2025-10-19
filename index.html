@@ -373,515 +373,7 @@ body.kb-open nav.bottom{
   </nav>
 </div>
 
-<script>
-(function(){
-  const STORAGE_KEY = 'habit_traker_demo_v3';
-  function isoDate(d){ const t=new Date(d.getFullYear(), d.getMonth(), d.getDate()); return t.toISOString().slice(0,10); }
-  function daysBetween(a,b){ const ms = (new Date(b) - new Date(a)); return Math.max(0, Math.round(ms/86400000)+1); }
 
-  const defaultState = {
-    profile: {name:'Гость', avatar: '', streak:0},
-    habits: [],
-    trash: [],
-    currentHabitId: null
-  };
-
-  function saveState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(e){} }
-  function loadState(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return JSON.parse(JSON.stringify(defaultState));
-      const s = JSON.parse(raw);
-      if(!('trash' in s)) s.trash = [];
-      return s;
-    }catch(e){ return JSON.parse(JSON.stringify(defaultState)); }
-  }
-
-  // DOM
-  const views = Array.from(document.querySelectorAll('.view'));
-  const navBtns = Array.from(document.querySelectorAll('.nav-btn'));
-  const headerTitle = document.getElementById('header-title');
-  const listRoot = document.getElementById('habit-list');
-  const trashPanel = document.getElementById('trash-panel');
-  const trashList = document.getElementById('trash-list');
-
-  const sendBtn = document.getElementById('send-btn');
-  const chatInput = document.getElementById('chat-input');
-  const messages = document.getElementById('messages');
-
-  const profileNameEl = document.getElementById('profile-name');
-  const profileStreakEl = document.getElementById('profile-streak');
-  const avatarImg = document.getElementById('avatar-img');
-  const avatarPlaceholder = document.getElementById('avatar-placeholder');
-  const avatarInput = document.getElementById('avatar-input');
-  const avatarLabel = document.getElementById('avatar-label');
-
-
-  let state = loadState();
-  if(!('pending' in state)) state.pending = null;
-
-  const COLOR_PALETTE = ['#ff6b3d', '#ff3b30', '#59e391', '#4da3ff', '#c792ea', '#ffd166', '#06d6a0', '#f469a9'];
-  function uid(){ return 'h' + Math.random().toString(36).slice(2,9); }
-  function pickColor(){
-    const used = state.habits.map(h=>h.color).filter(Boolean);
-    for(const c of COLOR_PALETTE){ if(!used.includes(c)) return c; }
-    return COLOR_PALETTE[Math.floor(Math.random()*COLOR_PALETTE.length)];
-  }
-  function createHabit(name){
-    if(state.pending && state.pending.type==='duration') state.pending = null;
-    const n = (name||'Новая привычка').trim();
-    const id = uid();
-    const h = { id, name: n, color: pickColor(), start: isoDate(new Date()), days: [] };
-    state.habits.unshift(h);
-    state.currentHabitId = id;
-    saveState(state);
-    renderAll();
-    return h;
-  }
-
-  function showView(id){
-    views.forEach(v=> v.id===id? v.classList.remove('hidden') : v.classList.add('hidden'));
-    navBtns.forEach(b=> b.dataset.view===id ? b.classList.add('active') : b.classList.remove('active'));
-    if(id==='view-habit') headerTitle.textContent = 'Привычки';
-    else if(id==='view-chat') headerTitle.textContent = 'Чат';
-    else if(id==='view-profile') headerTitle.textContent = 'Профиль';
-  }
-
-  // Calendar renderer for a given container & habit
-  function renderCalendar(h, wrapper, ym){
-    wrapper.innerHTML = '';
-    const head = document.createElement('div'); head.className='cal-head';
-    const monthLabel = document.createElement('div'); monthLabel.className='muted';
-    const ctrls = document.createElement('div'); ctrls.style.display='flex'; ctrls.style.gap='8px';
-    const prev = document.createElement('button'); prev.className='icon-btn'; prev.textContent='◀';
-    const next = document.createElement('button'); next.className='icon-btn'; next.textContent='▶';
-    ctrls.appendChild(prev); ctrls.appendChild(next);
-    head.appendChild(monthLabel); head.appendChild(ctrls);
-    const grid = document.createElement('div'); grid.className='cal-grid';
-
-    wrapper.appendChild(head); wrapper.appendChild(grid);
-
-    const base = ym || { y:new Date().getFullYear(), m:new Date().getMonth() };
-    let Y = base.y, M = base.m;
-
-    function draw(y, m){
-      grid.innerHTML='';
-      const first = new Date(y,m,1);
-      const last = new Date(y,m+1,0);
-      monthLabel.textContent = first.toLocaleString('ru-RU', {month:'long', year:'numeric'});
-      const wk=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
-      wk.forEach(w=>{ const el=document.createElement('div'); el.className='cal-cell'; el.style.background='transparent'; el.style.minHeight='18px'; el.style.padding='6px 0'; el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center'; el.style.fontSize='12px'; el.textContent=w; grid.appendChild(el); });
-      let startDay = first.getDay(); startDay = startDay===0?7:startDay;
-      for(let i=1;i<startDay;i++){ const el=document.createElement('div'); el.className='cal-cell'; el.style.opacity=.1; grid.appendChild(el); }
-      const todayKey = isoDate(new Date());
-      for(let d=1; d<=last.getDate(); d++){
-        const dateStr = isoDate(new Date(y,m,d));
-        const cell=document.createElement('div'); cell.className='cal-cell';
-        const top=document.createElement('div'); top.className='day'; top.textContent=d; cell.appendChild(top);
-        const dot=document.createElement('div'); dot.style.height='8px'; dot.style.width='8px'; dot.style.borderRadius='6px'; dot.style.marginTop='6px';
-        if(h.days.includes(dateStr)){ cell.classList.add('done'); dot.style.background='var(--success)'; } else { dot.style.background='transparent'; }
-        cell.appendChild(dot);
-        if(dateStr === todayKey){
-          cell.style.cursor='pointer'; cell.title='Отметить выполнение за сегодня';
-          cell.addEventListener('click', ()=>{
-            if(h.days.includes(todayKey)){ h.days = h.days.filter(x=>x!==todayKey); } else { h.days.push(todayKey); }
-            saveState(state);
-            draw(y,m);
-            renderAll();
-          });
-        } else {
-          cell.style.pointerEvents='none'; cell.title='Можно отмечать только текущий день'; cell.style.opacity = 0.85;
-        }
-        grid.appendChild(cell);
-      }
-    }
-    draw(Y,M);
-    prev.addEventListener('click', ()=>{ M--; if(M<0){M=11; Y--;} draw(Y,M); });
-    next.addEventListener('click', ()=>{ M++; if(M>11){M=0; Y++;} draw(Y,M); });
-  }
-
-
-  // Compute streak as consecutive days with at least one habit completed (today, yesterday, ...)
-  function computeStreak(){
-    let streak = 0;
-    if(!state.habits || state.habits.length === 0) return 0;
-    const d = new Date();
-    // Walk backwards day by day
-    while(true){
-      const key = isoDate(d);
-      const anyDone = state.habits.some(h => Array.isArray(h.days) && h.days.includes(key));
-      if(anyDone){ streak++; d.setDate(d.getDate()-1); } else { break; }
-    }
-    return streak;
-  }
-
-  function renderProfile(){
-    try{
-      // Name
-      profileNameEl.textContent = state?.profile?.name || 'Гость';
-      // Avatar
-      const src = state?.profile?.avatar || '';
-      if(src){
-        avatarImg.src = src;
-        avatarImg.classList.remove('hidden');
-        avatarPlaceholder.style.display = 'none';
-      } else {
-        avatarImg.src = '';
-        avatarImg.classList.add('hidden');
-        avatarPlaceholder.style.display = 'grid';
-      }
-      // Streak
-      const s = computeStreak();
-      state.profile.streak = s;
-      saveState(state);
-      profileStreakEl.textContent = 'Streak: ' + s;
-    }catch(e){ /* noop */ }
-  }
-
-  function computeProgress(h){
-    const elapsed = Math.max(1, daysBetween(h.start, isoDate(new Date())));
-    const total = h.targetDays ? Math.max(1, h.targetDays) : elapsed;
-    const done = Math.min(h.days.length, total);
-    const pct = Math.min(100, Math.round(done/total*100));
-    return {elapsed, total, done, pct};
-  }
-
-  function setNavBadge(doneToday){
-    const navBadge = document.querySelector('#nav-1 .nav-badge'); if(!navBadge) return;
-    try{
-      const today=isoDate(new Date());
-      const lit = sessionStorage.getItem('badgeLitDate') === today;
-      navBadge.style.display = (doneToday && lit) ? 'block' : 'none';
-    } catch(e){
-      navBadge.style.display = doneToday ? 'block' : 'none';
-    }
-  }
-
-  function renderTrash(){
-    if(!trashPanel || !trashList) return;
-    if(!state.trash || state.trash.length===0){
-      trashPanel.style.display='none';
-      trashList.textContent='Пусто';
-      return;
-    }
-    trashPanel.style.display='block';
-    trashList.innerHTML='';
-    state.trash.forEach(h=>{
-      const row = document.createElement('div');
-      row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='8px 0';
-      const left = document.createElement('div'); left.textContent = h.name; left.className='sub';
-      const btn = document.createElement('button'); btn.className='icon-btn'; btn.textContent='Восстановить';
-      btn.addEventListener('click', ()=> restoreHabit(h.id));
-      row.appendChild(left); row.appendChild(btn);
-      trashList.appendChild(row);
-    });
-  }
-
-  function deleteHabit(id){
-    const idx = state.habits.findIndex(h=>h.id===id);
-    if(idx<0) return;
-    const [removed] = state.habits.splice(idx,1);
-    state.trash.unshift(removed);
-    state.currentHabitId = state.habits.length ? state.habits[0].id : null;
-    saveState(state);
-    renderAll(); renderTrash();
-  }
-  function restoreHabit(id){
-    const idx = state.trash.findIndex(h=>h.id===id);
-    if(idx<0) return;
-    const [restored] = state.trash.splice(idx,1);
-    state.habits.unshift(restored);
-    state.currentHabitId = restored.id;
-    saveState(state);
-    renderAll(); renderTrash();
-  }
-
-  // Render ALL habits
-  function renderAll(){
-    listRoot.innerHTML='';
-    if(!state.habits.length){
-      const empty = document.createElement('div');
-      empty.className='sub';
-      empty.textContent='Нет привычек. Добавьте через чат ниже: напишите название, затем укажите срок (в днях).';
-      listRoot.appendChild(empty);
-      setNavBadge(false);
-      renderTrash();
-      return;
-    }
-
-    let anyDoneToday = false;
-    function isCompleted(h){
-  return !!(h && typeof h.targetDays==='number' && Array.isArray(h.days) && h.days.length >= Math.max(1, h.targetDays));
-}
-const incomplete = state.habits.filter(h => !isCompleted(h));
-const complete   = state.habits.filter(h =>  isCompleted(h));
-// Render: incomplete first, then complete
-[...incomplete, ...complete].forEach(h=>{
-      const {total, done, pct} = computeProgress(h);
-      const card = document.createElement('div'); card.className='habit-card';
-
-      // Title row
-      const title = document.createElement('div'); title.className='habit-title';
-      const titleWrap = document.createElement('div'); titleWrap.style.flex='1';
-      const nameEl = document.createElement('div'); nameEl.style.fontWeight='700'; nameEl.style.fontSize='16px'; nameEl.textContent = h.name;
-      const durationEl = document.createElement('div'); durationEl.className='sub'; durationEl.textContent = `Срок: ${total} дн.`;
-      titleWrap.appendChild(nameEl); titleWrap.appendChild(durationEl);
-
-      const right = document.createElement('div'); right.style.textAlign='right';
-      const subProg = document.createElement('div'); subProg.className='sub'; subProg.textContent='Прогресс';
-      const pctEl = document.createElement('div'); pctEl.className='sub'; pctEl.textContent = pct+'%';
-      right.appendChild(subProg); right.appendChild(pctEl);
-
-      const delBtn = document.createElement('button'); delBtn.className='icon-btn'; delBtn.title='Удалить привычку'; delBtn.textContent='🗑️';
-      delBtn.style.marginLeft='8px';
-      delBtn.addEventListener('click', ()=>{ if(confirm('Удалить привычку в корзину?')) deleteHabit(h.id); });
-
-      title.appendChild(titleWrap); title.appendChild(right); title.appendChild(delBtn);
-      card.appendChild(title);
-
-      // Progress
-      const progress = document.createElement('div'); progress.className='progress';
-      const bar = document.createElement('div'); bar.className='bar';
-      const fill = document.createElement('i'); fill.style.width = pct+'%';
-      bar.appendChild(fill);
-      const sub = document.createElement('div'); sub.className='sub'; sub.textContent = `${done} / ${total} выполнено`;
-      progress.appendChild(bar); progress.appendChild(sub);
-      card.appendChild(progress);
-
-      // Today row
-      const todayRow = document.createElement('div'); todayRow.className='today-task';
-      const todayKey = isoDate(new Date());
-      const doneToday = h.days.includes(todayKey); if(doneToday) anyDoneToday = true;
-      
-      if (typeof isCompleted==='function' ? isCompleted(h) : (h && h.targetDays && Array.isArray(h.days) && h.days.length >= Math.max(1, h.targetDays))) {
-        card.classList.add('done-today');
-        card.classList.add('habit-done');
-      }
-const check = document.createElement('div'); check.className='check today-check' + (doneToday ? ' done' : '');
-      check.textContent = '✔';
-      check.addEventListener('click', ()=>{
-        if(h.days.includes(todayKey)){ h.days = h.days.filter(d=>d!==todayKey); } else { h.days.push(todayKey); }
-        saveState(state); renderAll();
-      });
-      const ti = document.createElement('div'); ti.className='task-info';
-      const tt = document.createElement('div'); tt.style.fontWeight='700'; tt.textContent = 'Сегодня';
-      const ts = document.createElement('div'); ts.className='sub'; ts.textContent = doneToday ? 'Сегодня — ✔' : 'Сегодня — ✖';
-      ti.appendChild(tt); ti.appendChild(ts);
-      const muted = document.createElement('div'); muted.className='muted'; muted.textContent = doneToday ? 'Выполнено' : 'Не выполнено';
-      todayRow.appendChild(check); todayRow.appendChild(ti); todayRow.appendChild(muted);
-      card.appendChild(todayRow);
-
-      // Toggle calendar button
-      const toggleWrap = document.createElement('div'); toggleWrap.style.marginTop='10px'; toggleWrap.style.display='flex'; toggleWrap.style.gap='8px';
-      const toggleBtn = document.createElement('button'); toggleBtn.className='icon-btn'; toggleBtn.textContent='Календарь';
-      toggleWrap.appendChild(toggleBtn);
-      card.appendChild(toggleWrap);
-
-      // Calendar (hidden by default)
-      const cal = document.createElement('div'); cal.className='calendar hidden';
-      card.appendChild(cal);
-
-      let calRendered = false;
-      toggleBtn.addEventListener('click', ()=>{
-        cal.classList.toggle('hidden');
-        if(!calRendered){ renderCalendar(h, cal); calRendered = true; }
-      });
-listRoot.appendChild(card);
-    });
-
-    setNavBadge(anyDoneToday);
-    renderTrash();
-    renderProfile();
-  }
-
-  // Chat (same simple flow as before)
-  function pushMsg(text, from='you'){
-    const b = document.createElement('div');
-    b.className = from==='you' ? 'bubble you' : 'bubble bot';
-    b.textContent = text;
-    messages.appendChild(b);
-    messages.scrollTop = messages.scrollHeight;
-  }
-  
-  function parseHabitIntent(text){
-    const t = text.trim();
-    // Normalize spaces
-    let clean = t.replace(/\s+/g,' ').trim();
-
-    // Extract number of days (1..365)
-    const numMatch = clean.match(/(\d{1,3})/);
-    const days = numMatch ? Math.max(1, Math.min(365, parseInt(numMatch[1],10))) : null;
-
-    // Remove helper words and the number to isolate a probable name
-    let name = clean
-      .replace(/^(добав(ь|и)|добавить|создай|создать|прибавь|сделай)\s*/i,'')
-      .replace(/\bна\s+\d{1,3}\s*(дн(я|ей)?|дня|дней)?\b/gi,'')
-      .replace(/\b\d{1,3}\s*(дн(я|ей)?|дня|дней)?\b/gi,'')
-      .replace(/\bдн(я|ей)?\b/gi,'')
-      .replace(/\bдень\b/gi,'')
-      .replace(/\s+/g,' ').trim();
-
-    // If message looks like a habit name (2..40 chars) and not only filler words
-    const looksLikeName = /^[\wА-Яа-яЁё\s.,!()\-\u2013\u2014]{2,40}$/.test(name || '') && !/дн|дней|day|days/i.test(name || '');
-
-    if(looksLikeName){
-      return { name, days };
-    }
-    // If the whole text looks like a name (without cleaning)
-    const asName = /^[\wА-Яа-яЁё\s.,!()\-\u2013\u2014]{2,40}$/.test(clean) && !/дн|дней|day|days/i.test(clean);
-    if(asName){
-      return { name: clean, days };
-    }
-    return null;
-  }
-
-  function botReply(q){
-    const text = q.trim();
-
-    // If we're waiting for duration, prioritize that flow
-    if(state.pending && state.pending.type==='duration' && state.pending.habitId){
-      const num = (text.match(/(\d{1,3})/)||[])[1];
-      if(num){
-        const n = Math.max(1, Math.min(365, parseInt(num,10)));
-        const h = state.habits.find(x=>x.id===state.pending.habitId);
-        if(h){ h.targetDays = n; saveState(state); renderAll(); }
-        pushMsg(`Отлично, ставлю срок: ${n} дней.`, 'bot');
-        state.pending = null; saveState(state);
-        showView('view-habit');
-        return;
-      } else {
-        pushMsg('Напиши число дней, например: 30', 'bot');
-        return;
-      }
-    }
-
-    // New: try to parse full intent from a single message
-    const parsed = parseHabitIntent(text);
-    if(parsed && parsed.name){
-      const h = createHabit(parsed.name);
-      if(parsed.days){
-        h.targetDays = parsed.days;
-        saveState(state); renderAll();
-        pushMsg(`Добавил: «${h.name}» на ${parsed.days} дней. Удачи!`, 'bot');
-        showView('view-habit');
-        return;
-      } else {
-        pushMsg(`Добавил: «${h.name}». На сколько дней планируешь? Напиши число, например: 30`, 'bot');
-        state.pending = { type:'duration', habitId: h.id }; saveState(state);
-        return;
-      }
-    }
-
-    // Legacy flows below kept for compatibility
-    if(state.pending && state.pending.type==='name'){
-      const name = text.replace(/^привыч(ка|ку)?\s*/i, '').trim() || 'Новая привычка';
-      const h = createHabit(name);
-      pushMsg(`Добавил: «${h.name}». На сколько дней планируешь? Напиши число, например: 30`, 'bot');
-      state.pending = { type:'duration', habitId: h.id }; saveState(state);
-      return;
-    }
-
-    const numInline = (text.match(/(\d{1,3})/)||[])[1];
-    if(numInline){
-      const h = state.habits[0];
-      if(h){
-        const n = Math.max(1, Math.min(365, parseInt(numInline,10)));
-        h.targetDays = n; saveState(state); renderAll();
-        pushMsg(`Ок, срок для «${h.name}»: ${n} дней.`, 'bot');
-        return;
-      }
-    }
-
-    const looksLikeName = /^[\wА-Яа-яЁё\s.,!()\-\u2013\u2014]{2,40}$/.test(text) && !/дн|дней|day|days/i.test(text);
-    if(looksLikeName){
-      const h = createHabit(text);
-      pushMsg(`Добавил: «${h.name}». На сколько дней планируешь? Напиши число, например: 30`, 'bot');
-      state.pending = { type:'duration', habitId: h.id }; saveState(state);
-      return;
-    }
-
-    if(!state.habits || state.habits.length===0){
-      pushMsg('Что добавить в привычки? Просто напиши короткое название, например: «Пить воду».', 'bot');
-      state.pending = { type:'name' }; saveState(state);
-    } else {
-      pushMsg('Напиши название привычки, которую добавить. Можно сразу указать срок: «Пить воду 30».', 'bot');
-      state.pending = { type:'name' }; saveState(state);
-    }
-  }
-
-  function send(){
-    const t = (chatInput?.value||'').trim();
-    if(!t) return;
-    pushMsg(t, 'you'); chatInput.value=''; botReply(t);
-  }
-  sendBtn?.addEventListener('click', send);
-  chatInput?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') send(); });
-
-
-  // Avatar upload handler
-  if(avatarLabel && avatarInput){
-    avatarLabel.addEventListener('click', ()=> avatarInput.click());
-    avatarInput.addEventListener('change', (e)=>{
-      const file = e.target.files && e.target.files[0];
-      if(!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
-        try{
-          state.profile.avatar = dataUrl;
-          saveState(state);
-        }catch(err){}
-        renderProfile();
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // Nav
-  document.addEventListener('click', (ev)=>{
-    const navBtn = ev.target.closest('.nav-btn');
-    if(navBtn && navBtn.dataset && navBtn.dataset.view) showView(navBtn.dataset.view);
-  });
-
-  // Init
-  renderAll();
-  showView('view-habit');
-
-  renderProfile();
-  try{
-    const askedKey = 'profile_name_asked_v1';
-    const askedBefore = localStorage.getItem(askedKey) === '1';
-    if(!askedBefore){
-      const nm = prompt('Как тебя зовут?');
-      if(nm && nm.trim()){
-        state.profile.name = nm.trim();
-        saveState(state);
-      }
-      localStorage.setItem(askedKey, '1');
-      renderProfile();
-    }
-  }catch(e){}
-
-  try{
-    const welcomedKey = 'habit_welcome_shown';
-    const was = sessionStorage.getItem(welcomedKey);
-    if(!was){
-      pushMsg('Привет! Напиши короткое название привычки — я добавлю её и спрошу срок (в днях).', 'bot');
-      sessionStorage.setItem(welcomedKey, '1');
-    }
-  }catch(e){}
-
-  // Debug badge
-  try{
-    const badge = document.createElement('div');
-    badge.textContent = 'JS OK';
-    badge.style.position='fixed'; badge.style.right='10px'; badge.style.bottom='10px';
-    badge.style.background='rgba(0,0,0,0.5)'; badge.style.padding='6px 10px'; badge.style.borderRadius='8px'; badge.style.fontSize='12px';
-    badge.style.zIndex='9999';
-    document.body.appendChild(badge);
-    setTimeout(()=>badge.remove(), 1500);
-  }catch(e){}
-})();
 
 // --- Mobile-friendly avatar upload ---
 (function(){
@@ -1366,12 +858,11 @@ listRoot.appendChild(card);
     </div>
   </div>
 </div>
-
 <script>
 (function(){
   const STORAGE_KEY = 'habit_traker_demo_v3';
-  // Замените на ваш реальный URL Worker
-  const WORKER_URL = 'https://habit-proxyds.konayevna.workers.dev';
+  // ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ URL WORKER
+  const WORKER_URL = 'https://your-worker.your-username.workers.dev';
 
   function isoDate(d){ const t=new Date(d.getFullYear(), d.getMonth(), d.getDate()); return t.toISOString().slice(0,10); }
   function daysBetween(a,b){ const ms = (new Date(b) - new Date(a)); return Math.max(0, Math.round(ms/86400000)+1); }
@@ -1414,7 +905,6 @@ listRoot.appendChild(card);
   const avatarLabel = document.getElementById('avatar-label');
 
   let state = loadState();
-  if(!('pending' in state)) state.pending = null;
 
   const COLOR_PALETTE = ['#ff6b3d', '#ff3b30', '#59e391', '#4da3ff', '#c792ea', '#ffd166', '#06d6a0', '#f469a9'];
   function uid(){ return 'h' + Math.random().toString(36).slice(2,9); }
@@ -1426,7 +916,7 @@ listRoot.appendChild(card);
 
   // Состояние создания привычки
   let habitCreationState = {
-    step: 'name', // 'name', 'goal', 'currentLevel', 'duration', 'complete'
+    step: 'name',
     habitData: {
       name: '',
       goal: '',
@@ -1435,6 +925,17 @@ listRoot.appendChild(card);
       conversationHistory: []
     }
   };
+
+  // ========== НОВАЯ ЛОГИКА ЧАТА ==========
+  
+  // Функция для добавления сообщений в чат
+  function pushMsg(text, from='you'){
+    const b = document.createElement('div');
+    b.className = from==='you' ? 'bubble you' : 'bubble bot';
+    b.textContent = text;
+    messages.appendChild(b);
+    messages.scrollTop = messages.scrollHeight;
+  }
 
   // Инициализация чата
   function initChat() {
@@ -1456,21 +957,14 @@ listRoot.appendChild(card);
     };
   }
 
-  // Функция для добавления сообщений в чат
-  function pushMsg(text, from='you'){
-    const b = document.createElement('div');
-    b.className = from==='you' ? 'bubble you' : 'bubble bot';
-    b.textContent = text;
-    messages.appendChild(b);
-    messages.scrollTop = messages.scrollHeight;
-  }
-
   // Отправка сообщения в Mistral AI через Worker
   async function sendMessage() {
     const chatInput = document.getElementById('chat-input');
     const message = chatInput.value.trim();
     
     if (!message) return;
+    
+    console.log('Отправка сообщения:', message);
     
     // Добавляем сообщение пользователя
     pushMsg(message, 'you');
@@ -1483,6 +977,7 @@ listRoot.appendChild(card);
     });
     
     try {
+      console.log('Отправка запроса к Worker...');
       const response = await fetch(WORKER_URL, {
         method: 'POST',
         headers: {
@@ -1494,7 +989,12 @@ listRoot.appendChild(card);
         })
       });
       
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('Получен ответ от API:', data);
       
       // Добавляем ответ в историю
       habitCreationState.habitData.conversationHistory.push({
@@ -1507,10 +1007,12 @@ listRoot.appendChild(card);
       
       // Если план готов, создаем привычку
       if (data.completed && data.plan) {
+        console.log('Создание привычки с планом:', data.plan);
         createHabitWithPlan(data.plan);
       }
       
     } catch (error) {
+      console.error('Ошибка при отправке сообщения:', error);
       pushMsg('Извините, произошла ошибка соединения. Попробуйте еще раз.', 'bot');
     }
   }
@@ -1562,6 +1064,8 @@ listRoot.appendChild(card);
     return habit.plan[dayDiff];
   }
 
+  // ========== СТАРАЯ ЛОГИКА (не изменяем) ==========
+
   function showView(id){
     views.forEach(v=> v.id===id? v.classList.remove('hidden') : v.classList.add('hidden'));
     navBtns.forEach(b=> b.dataset.view===id ? b.classList.add('active') : b.classList.remove('active'));
@@ -1570,7 +1074,6 @@ listRoot.appendChild(card);
     else if(id==='view-profile') headerTitle.textContent = 'Профиль';
   }
 
-  // Calendar renderer
   function renderCalendar(h, wrapper, ym){
     wrapper.innerHTML = '';
     const head = document.createElement('div'); head.className='cal-head';
@@ -1841,13 +1344,17 @@ listRoot.appendChild(card);
   // Nav
   document.addEventListener('click', (ev)=>{
     const navBtn = ev.target.closest('.nav-btn');
-    if(navBtn && navBtn.dataset && navBtn.dataset.view) showView(navBtn.dataset.view);
+    if(navBtn && navBtn.dataset && navBtn.dataset.view) {
+      showView(navBtn.dataset.view);
+      
+      // При переходе на вкладку чата инициализируем заново
+      if (navBtn.dataset.view === 'view-chat') {
+        setTimeout(initChat, 100);
+      }
+    }
   });
 
-  // Инициализация приложения
-  renderAll();
-  showView('view-habit');
-  initChat(); // Инициализируем чат
+  // ========== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ==========
 
   // Обработчики для чата
   sendBtn.addEventListener('click', sendMessage);
@@ -1857,13 +1364,10 @@ listRoot.appendChild(card);
     }
   });
 
-  // При переходе на вкладку чата сбрасываем состояние
-  document.addEventListener('click', (ev) => {
-    const navBtn = ev.target.closest('.nav-btn');
-    if (navBtn && navBtn.dataset.view === 'view-chat') {
-      setTimeout(initChat, 100);
-    }
-  });
+  // Инициализация приложения
+  renderAll();
+  showView('view-habit');
+  initChat(); // Инициализируем чат
 
   // Инициализация профиля
   renderProfile();
@@ -1881,18 +1385,10 @@ listRoot.appendChild(card);
     }
   }catch(e){}
 
-  // Debug badge
-  try{
-    const badge = document.createElement('div');
-    badge.textContent = 'JS OK';
-    badge.style.position='fixed'; badge.style.right='10px'; badge.style.bottom='10px';
-    badge.style.background='rgba(0,0,0,0.5)'; badge.style.padding='6px 10px'; badge.style.borderRadius='8px'; badge.style.fontSize='12px';
-    badge.style.zIndex='9999';
-    document.body.appendChild(badge);
-    setTimeout(()=>badge.remove(), 1500);
-  }catch(e){}
+  console.log('Приложение инициализировано. Worker URL:', WORKER_URL);
 })();
 </script>
+
 
 </body>
 </html>
