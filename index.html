@@ -1369,531 +1369,527 @@ listRoot.appendChild(card);
 
 <script>
 (function(){
-  const STORAGE_KEY='habit_traker_demo_v3';
-  const LOG_KEY=STORAGE_KEY+'_achvlog';
-  const STREAK_STEPS=[7,14,21,30,45,60,75,90,100,120];
-  const MASTERED_STEPS=[1,2,3,4,5];
-
-  function getState(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');}catch(e){return null;}}
-  function setState(s){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}catch(e){}}
-  function getLog(){try{return JSON.parse(localStorage.getItem(LOG_KEY)||'{"streak":{},"mastered":{}}');}catch(e){return{streak:{},mastered:{}};}}
-  function setLog(l){try{localStorage.setItem(LOG_KEY,JSON.stringify(l));}catch(e){}}
-  function isoDate(d){const t=new Date(d.getFullYear(),d.getMonth(),d.getDate());return t.toISOString().slice(0,10);}
-  function decl(n,f){n=Math.abs(n)%100;const n1=n%10;if(n>10&&n<20)return f[2];if(n1>1&&n1<5)return f[1];if(n1==1)return f[0];return f[2];}
-  function snapshotHabits(s){const m=new Map();(s?.habits||[]).forEach(h=>{const t=h?.targetDays?Math.max(1,h.targetDays):null;const set=new Set(Array.isArray(h?.days)?h.days.slice():[]);m.set(h.id,{target:t,set,count:set.size});});return m;}
-  function masteredCount(snap){let c=0;snap.forEach(v=>{if(v.target&&v.count>=v.target)c++;});return c;}
-
-  function openModal(m){const b=document.getElementById('achv-backdrop');const t=document.getElementById('achv-text');if(!b||!t)return;t.textContent=m||'Вы разблокировали награду.';b.style.display='flex';b.classList.add('show');document.body.classList.add('modal-open');}
-  function closeModal(){const b=document.getElementById('achv-backdrop');if(!b)return;b.classList.remove('show');b.style.display='none';document.body.classList.remove('modal-open');}
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
-  document.getElementById('achv-ok')?.addEventListener('click',closeModal,{passive:true});
-  document.getElementById('achv-close')?.addEventListener('click',closeModal,{passive:true});
-  document.getElementById('achv-backdrop')?.addEventListener('click',e=>{if(e.target.id==='achv-backdrop')closeModal();},{passive:true});
-
-  function ensureChip(){
-    const p=document.getElementById('view-profile'); if(!p) return;
-    const name=p.querySelector('.name');
-    let h=document.getElementById('series-chip-holder');
-    if(!h){ h=document.createElement('div'); h.id='series-chip-holder'; h.className='series-chip-place'; if(name&&name.parentElement) name.parentElement.after(h); else p.prepend(h); }
-    let c=document.getElementById('series-chip-gold');
-    if(!c){ c=document.createElement('span'); c.id='series-chip-gold'; c.className='series-chip-gold'; c.innerHTML='<span class="flame">🔥</span><span class="series-text">Серия 0 дней</span>'; h.innerHTML=''; h.appendChild(c); }
-    // cleanup duplicates
-    p.querySelectorAll('#streak-chip-el').forEach(n=>n.remove());
-    h.querySelectorAll('span').forEach(n=>{ if(n.id!=='series-chip-gold') n.remove(); });
-  }
-  function updateChip(){
-    const s=getState()||{}; const c=document.getElementById('series-chip-gold'); if(!c) return;
-    const t=c.querySelector('.series-text') || querySelector('.txt'); const v=(s.profile?.streak)||0; if(t) t.textContent='Серия '+v+' '+decl(v,['день','дня','дней']);
-  }
-
-  document.addEventListener('click',function(e){
-    const today=!!e.target.closest('.today-check,.check');
-    const nav=e.target.closest('.nav-btn');
-    if(!today && !(nav&&nav.dataset&&nav.dataset.view==='view-profile'))return;
-
-    const date=isoDate(new Date());
-    let prevSnap=null, prevMaster=null, prevStreak=null;
-    if(today){
-      const sp=getState()||{}; prevSnap=snapshotHabits(sp); prevMaster=new Set((sp.profile?.badges?.mastered)||[]); prevStreak=new Set((sp.profile?.badges?.streak)||[]);
-    }
-
-    setTimeout(function(){
-      ensureChip(); updateChip();
-      if(today){
-        const s=getState()||{}; const next=snapshotHabits(s);
-        const log=getLog(); log.mastered[date]=log.mastered[date]||{}; log.streak[date]=log.streak[date]||{};
-
-        // mastered: last day only, once per day per habit
-        let doneId=null;
-        next.forEach((n,id)=>{
-          const p=prevSnap.get(id); if(!p) return;
-          const d=n.count-p.count;
-          const tw=p.set.has(date), tn=n.set.has(date);
-          const fin=!!n.target && n.count===n.target;
-          if(d===1 && !tw && tn && fin && !log.mastered[date][id]) doneId=id;
-        });
-        if(doneId){
-          log.mastered[date][doneId]=true; setLog(log);
-          const pc=[...prevSnap.values()].filter(v=>v.target&&v.count>=v.target).length;
-          const nc=[...next.values()].filter(v=>v.target&&v.count>=v.target).length;
-          if(nc>pc){
-            const s2=getState()||{}; const setM=new Set((s2.profile?.badges?.mastered)||[]);
-            let add=0; for(const st of MASTERED_STEPS){ if(nc>=st && !prevMaster.has(st)) add=st; }
-            if(add){ setM.add(add); s2.profile=s2.profile||{}; s2.profile.badges=s2.profile.badges||{}; s2.profile.badges.mastered=[...setM].sort((a,b)=>a-b); setState(s2); if(typeof window.renderBadges==='function') window.renderBadges(s2); }
-          }
-          openModal('Поздравляем! Привычка завершена 🎉');
-        }
-
-        // streak: trigger once per day per threshold
-        const sNow=getState()||{}; const cur=(sNow.profile?.streak)||0;
-        let addS=0; for(const n of STREAK_STEPS){ if(cur>=n && !prevStreak.has(n)) addS=n; }
-        if(addS && !log.streak[date][addS]){
-          log.streak[date][addS]=true; setLog(log);
-          const setS=new Set((sNow.profile?.badges?.streak)||[]); setS.add(addS);
-          sNow.profile=sNow.profile||{}; sNow.profile.badges=sNow.profile.badges||{}; sNow.profile.badges.streak=[...setS].sort((a,b)=>a-b); setState(sNow);
-          if(typeof window.renderBadges==='function') window.renderBadges(sNow);
-          openModal('Поздравляем! Новая серия: '+addS+' '+decl(addS,['день','дня','дней']));
-        }
-      }
-
-      if(nav&&nav.dataset&&nav.dataset.view==='view-profile'){ ensureChip(); updateChip(); }
-    }, today?140:70);
-  }, {capture:true, passive:true});
-
-  document.addEventListener('DOMContentLoaded', function(){ ensureChip(); updateChip(); });
-})();
-</script>
-<!-- === /PATCH === -->
-
-
-<!-- === PATCH: STREAK FIX ONLY (recompute + chip update) === -->
-<script>
-(function(){
   const STORAGE_KEY = 'habit_traker_demo_v3';
+  // Замените на ваш реальный URL Worker
+  const WORKER_URL = 'https://habit-proxyds.konayevna.workers.dev';
 
-  function getState(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null'); }catch(e){ return null; } }
-  function setState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(e){} }
+  function isoDate(d){ const t=new Date(d.getFullYear(), d.getMonth(), d.getDate()); return t.toISOString().slice(0,10); }
+  function daysBetween(a,b){ const ms = (new Date(b) - new Date(a)); return Math.max(0, Math.round(ms/86400000)+1); }
 
-  function isoDate(d){
-    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    return t.toISOString().slice(0,10);
+  const defaultState = {
+    profile: {name:'Гость', avatar: '', streak:0},
+    habits: [],
+    trash: [],
+    currentHabitId: null
+  };
+
+  function saveState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return JSON.parse(JSON.stringify(defaultState));
+      const s = JSON.parse(raw);
+      if(!('trash' in s)) s.trash = [];
+      return s;
+    }catch(e){ return JSON.parse(JSON.stringify(defaultState)); }
   }
-  function decl(n, forms){
-    n = Math.abs(n) % 100; var n1 = n % 10;
-    if (n>10 && n<20) return forms[2];
-    if (n1>1 && n1<5) return forms[1];
-    if (n1==1) return forms[0];
-    return forms[2];
+
+  // DOM элементы
+  const views = Array.from(document.querySelectorAll('.view'));
+  const navBtns = Array.from(document.querySelectorAll('.nav-btn'));
+  const headerTitle = document.getElementById('header-title');
+  const listRoot = document.getElementById('habit-list');
+  const trashPanel = document.getElementById('trash-panel');
+  const trashList = document.getElementById('trash-list');
+
+  const sendBtn = document.getElementById('send-btn');
+  const chatInput = document.getElementById('chat-input');
+  const messages = document.getElementById('messages');
+
+  const profileNameEl = document.getElementById('profile-name');
+  const profileStreakEl = document.getElementById('profile-streak');
+  const avatarImg = document.getElementById('avatar-img');
+  const avatarPlaceholder = document.getElementById('avatar-placeholder');
+  const avatarInput = document.getElementById('avatar-input');
+  const avatarLabel = document.getElementById('avatar-label');
+
+  let state = loadState();
+  if(!('pending' in state)) state.pending = null;
+
+  const COLOR_PALETTE = ['#ff6b3d', '#ff3b30', '#59e391', '#4da3ff', '#c792ea', '#ffd166', '#06d6a0', '#f469a9'];
+  function uid(){ return 'h' + Math.random().toString(36).slice(2,9); }
+  function pickColor(){
+    const used = state.habits.map(h=>h.color).filter(Boolean);
+    for(const c of COLOR_PALETTE){ if(!used.includes(c)) return c; }
+    return COLOR_PALETTE[Math.floor(Math.random()*COLOR_PALETTE.length)];
   }
 
-  function computeStreakFromState(s){
-    if(!s || !Array.isArray(s.habits) || s.habits.length===0) return 0;
+  // Состояние создания привычки
+  let habitCreationState = {
+    step: 'name', // 'name', 'goal', 'currentLevel', 'duration', 'complete'
+    habitData: {
+      name: '',
+      goal: '',
+      currentLevel: '',
+      duration: 0,
+      conversationHistory: []
+    }
+  };
+
+  // Инициализация чата
+  function initChat() {
+    const messages = document.getElementById('messages');
+    messages.innerHTML = '';
+    
+    pushMsg('Привет! Я помогу тебе создать новую привычку. Какую привычку ты хочешь развить? Напиши конкретное название (например: "пить 2 литра воды в день", "читать 30 минут", "бегать 3 км").', 'bot');
+    
+    // Сброс состояния
+    habitCreationState = {
+      step: 'name',
+      habitData: {
+        name: '',
+        goal: '',
+        currentLevel: '',
+        duration: 0,
+        conversationHistory: []
+      }
+    };
+  }
+
+  // Функция для добавления сообщений в чат
+  function pushMsg(text, from='you'){
+    const b = document.createElement('div');
+    b.className = from==='you' ? 'bubble you' : 'bubble bot';
+    b.textContent = text;
+    messages.appendChild(b);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // Отправка сообщения в Mistral AI через Worker
+  async function sendMessage() {
+    const chatInput = document.getElementById('chat-input');
+    const message = chatInput.value.trim();
+    
+    if (!message) return;
+    
+    // Добавляем сообщение пользователя
+    pushMsg(message, 'you');
+    chatInput.value = '';
+    
+    // Добавляем в историю
+    habitCreationState.habitData.conversationHistory.push({
+      role: 'user',
+      content: message
+    });
+    
+    try {
+      const response = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          habitData: habitCreationState.habitData
+        })
+      });
+      
+      const data = await response.json();
+      
+      // Добавляем ответ в историю
+      habitCreationState.habitData.conversationHistory.push({
+        role: 'assistant',
+        content: data.response
+      });
+      
+      // Показываем ответ
+      pushMsg(data.response, 'bot');
+      
+      // Если план готов, создаем привычку
+      if (data.completed && data.plan) {
+        createHabitWithPlan(data.plan);
+      }
+      
+    } catch (error) {
+      pushMsg('Извините, произошла ошибка соединения. Попробуйте еще раз.', 'bot');
+    }
+  }
+
+  // Создание привычки с планом
+  function createHabitWithPlan(plan) {
+    const habit = {
+      id: uid(),
+      name: habitCreationState.habitData.name || 'Новая привычка',
+      color: pickColor(),
+      start: isoDate(new Date()),
+      days: [],
+      targetDays: habitCreationState.habitData.duration || 30,
+      plan: plan,
+      currentDay: 0
+    };
+    
+    state.habits.unshift(habit);
+    saveState(state);
+    renderAll();
+    
+    // Показываем уведомление
+    pushMsg(`✅ Привычка "${habit.name}" создана! План на ${habit.targetDays} дней добавлен в календарь. Задания будут меняться автоматически каждый день.`, 'bot');
+    
+    // Сбрасываем состояние через 3 секунды
+    setTimeout(() => {
+      initChat();
+    }, 3000);
+  }
+
+  // Получение задания на сегодня из плана
+  function getTodayTask(habit) {
+    if (!habit.plan || !habit.plan.length) {
+      return 'Задание не назначено';
+    }
+    
+    const today = new Date();
+    const startDate = new Date(habit.start);
+    const dayDiff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+    
+    if (dayDiff < 0) {
+      return 'Привычка еще не началась';
+    }
+    
+    if (dayDiff >= habit.plan.length) {
+      return 'Привычка завершена! 🎉';
+    }
+    
+    return habit.plan[dayDiff];
+  }
+
+  function showView(id){
+    views.forEach(v=> v.id===id? v.classList.remove('hidden') : v.classList.add('hidden'));
+    navBtns.forEach(b=> b.dataset.view===id ? b.classList.add('active') : b.classList.remove('active'));
+    if(id==='view-habit') headerTitle.textContent = 'Привычки';
+    else if(id==='view-chat') headerTitle.textContent = 'Чат';
+    else if(id==='view-profile') headerTitle.textContent = 'Профиль';
+  }
+
+  // Calendar renderer
+  function renderCalendar(h, wrapper, ym){
+    wrapper.innerHTML = '';
+    const head = document.createElement('div'); head.className='cal-head';
+    const monthLabel = document.createElement('div'); monthLabel.className='muted';
+    const ctrls = document.createElement('div'); ctrls.style.display='flex'; ctrls.style.gap='8px';
+    const prev = document.createElement('button'); prev.className='icon-btn'; prev.textContent='◀';
+    const next = document.createElement('button'); next.className='icon-btn'; next.textContent='▶';
+    ctrls.appendChild(prev); ctrls.appendChild(next);
+    head.appendChild(monthLabel); head.appendChild(ctrls);
+    const grid = document.createElement('div'); grid.className='cal-grid';
+
+    wrapper.appendChild(head); wrapper.appendChild(grid);
+
+    const base = ym || { y:new Date().getFullYear(), m:new Date().getMonth() };
+    let Y = base.y, M = base.m;
+
+    function draw(y, m){
+      grid.innerHTML='';
+      const first = new Date(y,m,1);
+      const last = new Date(y,m+1,0);
+      monthLabel.textContent = first.toLocaleString('ru-RU', {month:'long', year:'numeric'});
+      const wk=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+      wk.forEach(w=>{ const el=document.createElement('div'); el.className='cal-cell'; el.style.background='transparent'; el.style.minHeight='18px'; el.style.padding='6px 0'; el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center'; el.style.fontSize='12px'; el.textContent=w; grid.appendChild(el); });
+      let startDay = first.getDay(); startDay = startDay===0?7:startDay;
+      for(let i=1;i<startDay;i++){ const el=document.createElement('div'); el.className='cal-cell'; el.style.opacity=.1; grid.appendChild(el); }
+      const todayKey = isoDate(new Date());
+      for(let d=1; d<=last.getDate(); d++){
+        const dateStr = isoDate(new Date(y,m,d));
+        const cell=document.createElement('div'); cell.className='cal-cell';
+        const top=document.createElement('div'); top.className='day'; top.textContent=d; cell.appendChild(top);
+        const dot=document.createElement('div'); dot.style.height='8px'; dot.style.width='8px'; dot.style.borderRadius='6px'; dot.style.marginTop='6px';
+        if(h.days.includes(dateStr)){ cell.classList.add('done'); dot.style.background='var(--success)'; } else { dot.style.background='transparent'; }
+        cell.appendChild(dot);
+        if(dateStr === todayKey){
+          cell.style.cursor='pointer'; cell.title='Отметить выполнение за сегодня';
+          cell.addEventListener('click', ()=>{
+            if(h.days.includes(todayKey)){ h.days = h.days.filter(x=>x!==todayKey); } else { h.days.push(todayKey); }
+            saveState(state);
+            draw(y,m);
+            renderAll();
+          });
+        } else {
+          cell.style.pointerEvents='none'; cell.title='Можно отмечать только текущий день'; cell.style.opacity = 0.85;
+        }
+        grid.appendChild(cell);
+      }
+    }
+    draw(Y,M);
+    prev.addEventListener('click', ()=>{ M--; if(M<0){M=11; Y--;} draw(Y,M); });
+    next.addEventListener('click', ()=>{ M++; if(M>11){M=0; Y++;} draw(Y,M); });
+  }
+
+  function computeStreak(){
     let streak = 0;
+    if(!state.habits || state.habits.length === 0) return 0;
     const d = new Date();
     while(true){
       const key = isoDate(d);
-      const anyDone = s.habits.some(h => Array.isArray(h.days) && h.days.includes(key));
+      const anyDone = state.habits.some(h => Array.isArray(h.days) && h.days.includes(key));
       if(anyDone){ streak++; d.setDate(d.getDate()-1); } else { break; }
     }
     return streak;
   }
 
-  function updateGoldChipText(){
-    const chip = document.getElementById('series-chip-gold');
-    const s = getState() || {};
-    const v = (s.profile && typeof s.profile.streak==='number') ? s.profile.streak : 0;
-    if(chip){
-      let txt = chip.querySelector('.series-text') || chip.querySelector('.series-text') || querySelector('.txt');
-      if(txt){ txt.textContent = 'Серия ' + v + ' ' + decl(v, ['день','дня','дней']); }
-    }
-  }
-
-  function ensureGoldChip(){
-    const profile = document.getElementById('view-profile');
-    if(!profile) return;
-    const name = profile.querySelector('.name');
-    let holder = document.getElementById('series-chip-holder');
-    if(!holder){
-      holder = document.createElement('div');
-      holder.id = 'series-chip-holder';
-      holder.className = 'series-chip-place';
-      if(name && name.parentElement){ name.parentElement.after(holder); } else { profile.prepend(holder); }
-    }
-    let chip = document.getElementById('series-chip-gold');
-    if(!chip){
-      chip = document.createElement('span');
-      chip.id = 'series-chip-gold';
-      chip.className = 'series-chip-gold';
-      chip.innerHTML = '<span class="flame">🔥</span><span class="series-text">Серия 0 дней</span>';
-      holder.innerHTML = '';
-      holder.appendChild(chip);
-    }
-  }
-
-  function recomputeAndPersist(){
-    const s = getState() || {};
-    s.profile = s.profile || {streak:0};
-    const v = computeStreakFromState(s);
-    if(s.profile.streak !== v){
-      s.profile.streak = v;
-      setState(s);
-    }
-    updateGoldChipText();
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    // Initial compute & render
-    ensureGoldChip();
-    recomputeAndPersist();
-
-    // Recompute after toggling "Сегодня"
-    document.addEventListener('click', function(e){
-      if(e.target.closest('.today-check,.check')){
-        setTimeout(recomputeAndPersist, 120);
-      }
-    }, {capture:true, passive:true});
-  });
-})();
-</script>
-<!-- === /PATCH: STREAK FIX ONLY === -->
-
-
-<script>
-document.addEventListener('DOMContentLoaded', function(){
-  var chip = document.getElementById('series-chip-gold');
-  if(chip){
-    var hasText = !!chip.querySelector('.series-text');
-    if(!hasText){
-      chip.innerHTML = '<span class="flame">🔥</span><span class="series-text">Серия 0 дней</span>';
-    }
-  }
-});
-</script>
-
-
-<!-- === v13: Consolidated Rewards + Streak + Congrats (self-contained) === -->
-<style>
-  /* Modal (ensures present and topmost) */
-  .achv-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.60);display:none;align-items:center;justify-content:center;z-index:2147483647;backdrop-filter:blur(3px)}
-  .achv-backdrop.show{display:flex}
-  body.modal-open{overflow:hidden}
-  .achv-modal{width:min(92vw,380px);background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.30));border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:18px 16px 16px;box-shadow:0 18px 50px rgba(0,0,0,.55);animation:achv-pop .45s ease both}
-  @keyframes achv-pop{0%{transform:scale(.86);opacity:0}60%{transform:scale(1.04);opacity:1}100%{transform:scale(1)}}
-  .achv-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-  .achv-icon{font-size:22px;line-height:1;background:radial-gradient(80% 140% at 20% 0%,#ffef9a,#ffd166 50%,#f7b733 80%);padding:8px;border-radius:14px;border:1px solid rgba(255,215,120,.85);box-shadow:0 8px 22px rgba(247,183,51,.35),inset 0 1px 0 rgba(255,255,255,.45)}
-  .achv-title{font-weight:900;font-size:16px}
-  .achv-body{color:var(--muted);font-size:14px;margin-bottom:12px}
-  .achv-actions{display:flex;gap:8px;justify-content:flex-end}
-  .btn{padding:10px 12px;border-radius:12px;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:var(--panel);color:#e6eef3}
-  .btn.primary{background:linear-gradient(90deg,#ffd166,#f7b733);color:#1a1400;font-weight:800;border-color:rgba(255,215,120,.85);box-shadow:0 10px 20px rgba(247,183,51,.35)}
-  /* Chip visibility */
-  #profile-streak{display:none!important;height:0!important;overflow:hidden!important}
-  .series-chip-gold{display:inline-flex!important;align-items:center!important;gap:8px!important;padding:8px 12px!important;border-radius:999px;font-weight:800;font-size:13px;letter-spacing:.2px;color:#1a1400;background:radial-gradient(80% 140% at 20% 0%,#ffef9a,#ffd166 50%,#f7b733 80%);border:1px solid rgba(255,215,120,.85);box-shadow:0 6px 22px rgba(247,183,51,.35),inset 0 1px 0 rgba(255,255,255,.45),inset 0 -2px 8px rgba(179,112,0,.25);white-space:nowrap}
-  .series-chip-gold .series-text{display:inline!important;visibility:visible!important;opacity:1!important;color:#1a1400!important;font-weight:800}
-</style>
-
-<!-- Ensure modal exists -->
-<div class="achv-backdrop" id="achv-backdrop" aria-hidden="true" style="display:none">
-  <div class="achv-modal" role="dialog" aria-modal="true" aria-labelledby="achv-title">
-    <div class="achv-header">
-      <div class="achv-icon">🏆</div>
-      <div class="achv-title" id="achv-title">Поздравляем! Новое достижение</div>
-    </div>
-    <div class="achv-body" id="achv-text">Вы разблокировали награду.</div>
-    <div class="achv-actions">
-      <button class="btn" id="achv-close">Закрыть</button>
-      <button class="btn primary" id="achv-ok">Класс!</button>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  const STORAGE_KEY='habit_traker_demo_v3';
-  const LOG_KEY=STORAGE_KEY+'_achvlog';
-  const STREAK_STEPS=[7,14,21,30,45,60,75,90,100,120];
-  const MASTERED_STEPS=[1,2,3,4,5];
-
-  /* ==== utils ==== */
-  function getState(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');}catch(e){return null;}}
-  function setState(s){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}catch(e){}}
-  function getLog(){try{return JSON.parse(localStorage.getItem(LOG_KEY)||'{"streak":{},"mastered":{}}');}catch(e){return{streak:{},mastered:{}};}}
-  function setLog(l){try{localStorage.setItem(LOG_KEY,JSON.stringify(l));}catch(e){}}
-  function isoDate(d){const t=new Date(d.getFullYear(),d.getMonth(),d.getDate());return t.toISOString().slice(0,10);}
-  function decl(n,f){n=Math.abs(n)%100;const n1=n%10;if(n>10&&n<20)return f[2];if(n1>1&&n1<5)return f[1];if(n1==1)return f[0];return f[2];}
-  function ensureFields(s){s.profile=s.profile||{name:'Гость',avatar:'',streak:0};s.profile.badges=s.profile.badges||{streak:[],mastered:[]};}
-  function snapshotHabits(s){const m=new Map();(s?.habits||[]).forEach(h=>{const t=h?.targetDays?Math.max(1,h.targetDays):null;const set=new Set(Array.isArray(h?.days)?h.days.slice():[]);m.set(h.id,{target:t,set,count:set.size});});return m;}
-  function masteredCount(snap){let c=0;snap.forEach(v=>{if(v.target&&v.count>=v.target)c++;});return c;}
-  function computeStreakFromState(s){if(!s||!Array.isArray(s.habits)||s.habits.length===0)return 0;let streak=0;const d=new Date();while(true){const key=isoDate(d);const any=s.habits.some(h=>Array.isArray(h.days)&&h.days.includes(key));if(any){streak++;d.setDate(d.getDate()-1);}else{break;}}return streak;}
-
-  /* ==== modal ==== */
-  function openModal(m){const b=document.getElementById('achv-backdrop'),t=document.getElementById('achv-text');if(!b||!t)return;t.textContent=m||'Вы разблокировали награду.';b.style.display='flex';b.classList.add('show');document.body.classList.add('modal-open');}
-  function closeModal(){const b=document.getElementById('achv-backdrop');if(!b)return;b.classList.remove('show');b.style.display='none';document.body.classList.remove('modal-open');}
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
-  document.getElementById('achv-ok')?.addEventListener('click',closeModal,{passive:true});
-  document.getElementById('achv-close')?.addEventListener('click',closeModal,{passive:true});
-  document.getElementById('achv-backdrop')?.addEventListener('click',e=>{if(e.target.id==='achv-backdrop')closeModal();},{passive:true});
-
-  /* ==== chip ==== */
-  function ensureChip(){const p=document.getElementById('view-profile');if(!p)return;const name=p.querySelector('.name');let holder=document.getElementById('series-chip-holder');if(!holder){holder=document.createElement('div');holder.id='series-chip-holder';holder.className='series-chip-place';if(name&&name.parentElement)name.parentElement.after(holder);else p.prepend(holder);}let chip=document.getElementById('series-chip-gold');if(!chip){chip=document.createElement('span');chip.id='series-chip-gold';chip.className='series-chip-gold';chip.innerHTML='<span class="flame">🔥</span><span class="series-text">Серия 0 дней</span>';holder.innerHTML='';holder.appendChild(chip);}p.querySelectorAll('#streak-chip-el').forEach(n=>n.remove());holder.querySelectorAll('span').forEach(n=>{if(n.id!=='series-chip-gold')n.remove();});}
-  function updateChip(){const s=getState()||{};ensureFields(s);const chip=document.getElementById('series-chip-gold');if(!chip)return;const v=s.profile.streak||0;const span=chip.querySelector('.series-text');if(span)span.textContent='Серия '+v+' '+decl(v,['день','дня','дней']);}
-
-  /* ==== medals render fallback (if window.renderBadges missing) ==== */
-  function maybeRenderMedals(s){const box=document.getElementById('medals');if(!box) return; if(typeof window.renderBadges==='function'){try{window.renderBadges(s);}catch(_){}}}
-
-  /* ==== recompute streak once on load ==== */
-  document.addEventListener('DOMContentLoaded',function(){
-    // initial recompute & chip
-    let s=getState()||{}; ensureFields(s);
-    const v=computeStreakFromState(s); if(s.profile.streak!==v){s.profile.streak=v; setState(s);}
-    ensureChip(); updateChip();
-  });
-
-  /* ==== main click hook ==== */
-  document.addEventListener('click',function(e){
-    const today=!!e.target.closest('.today-check,.check');
-    const nav=e.target.closest('.nav-btn'); if(!today && !(nav&&nav.dataset&&nav.dataset.view==='view-profile')) return;
-
-    // snapshots before
-    const date=isoDate(new Date());
-    let prevSnap=null, prevMasteredBadges=null, prevStreakBadges=null;
-    if(today){const sp=getState()||{}; ensureFields(sp); prevSnap=snapshotHabits(sp); prevMasteredBadges=new Set((sp.profile.badges?.mastered)||[]); prevStreakBadges=new Set((sp.profile.badges?.streak)||[]);}
-
-    setTimeout(function(){
-      let s=getState()||{}; ensureFields(s);
-
-      // recompute streak (so it updates even if app didn't)
-      const v=computeStreakFromState(s); if(s.profile.streak!==v){s.profile.streak=v; setState(s);}
-      ensureChip(); updateChip();
-
-      if(today){
-        const nextSnap=snapshotHabits(s);
-        const log=getLog(); log.mastered[date]=log.mastered[date]||{}; log.streak[date]=log.streak[date]||{};
-
-        // exact last day completion
-        let doneId=null;
-        nextSnap.forEach((n,id)=>{
-          const p=prevSnap.get(id); if(!p) return;
-          const delta=n.count-p.count;
-          const todayWas=p.set.has(date), todayNow=n.set.has(date);
-          const hitsTargetNow=!!n.target && n.count===n.target;
-          if(delta===1 && !todayWas && todayNow && hitsTargetNow && !log.mastered[date][id]) doneId=id;
-        });
-        if(doneId){
-          log.mastered[date][doneId]=true; setLog(log);
-          // thresholds for mastered (1..5)
-          const pc=[...prevSnap.values()].filter(v=>v.target&&v.count>=v.target).length;
-          const nc=[...nextSnap.values()].filter(v=>v.target&&v.count>=v.target).length;
-          if(nc>pc){
-            let add=0; for(const step of [1,2,3,4,5]){ if(nc>=step && !prevMasteredBadges.has(step)) add=step; }
-            if(add){
-              const setM=new Set(s.profile.badges.mastered||[]); setM.add(add);
-              s.profile.badges.mastered=[...setM].sort((a,b)=>a-b); setState(s); maybeRenderMedals(s);
-            }
-          }
-          openModal('Поздравляем! Привычка завершена 🎉');
-        }
-
-        // streak thresholds
-        const cur=s.profile.streak||0;
-        let addS=0; for(const n of STREAK_STEPS){ if(cur>=n && !prevStreakBadges.has(n)) addS=n; }
-        if(addS && !getLog().streak[date]?.[addS]){
-          const log2=getLog(); log2.streak[date]=log2.streak[date]||{}; log2.streak[date][addS]=true; setLog(log2);
-          const setS=new Set(s.profile.badges.streak||[]); setS.add(addS);
-          s.profile.badges.streak=[...setS].sort((a,b)=>a-b); setState(s); maybeRenderMedals(s);
-          openModal('Поздравляем! Новая серия: '+addS+' '+decl(addS,['день','дня','дней']));
-        }
-      }
-
-      if(nav && nav.dataset && nav.dataset.view==='view-profile'){ ensureChip(); updateChip(); }
-    }, today?140:70);
-  },{capture:true,passive:true});
-})();
-</script>
-<!-- === /v13 === -->
-
-
-<!-- === PATCH: Yandex fix — remove streak before awards + inline editable name (no observers) === -->
-<style>
-  /* Hide streak chip in awards region */
-  #series-chip-holder, #series-chip-gold { display: none !important; }
-  /* Editable name: subtle affordance */
-  #view-profile .name, #profile-name { cursor: text; border-bottom: 1px dashed rgba(255,255,255,.25); }
-</style>
-<script>
-(function(){
-  try{
-    var STORAGE_KEY = 'habit_traker_demo_v3';
-    function getState(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); }catch(e){ return null; } }
-    function setState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(e){} }
-
-    function wireEditableName(){
-      var profile = document.getElementById('view-profile') || document.body;
-      if(!profile) return;
-      var nameEl = profile.querySelector('#profile-name') || profile.querySelector('.name');
-      if(!nameEl) return;
-
-      // hydrate from storage once
-      var s = getState() || {};
-      if(s && s.profile && s.profile.name){
-        nameEl.textContent = s.profile.name;
-      }
-
-      if(nameEl.getAttribute('data-editable') === '1') return;
-      nameEl.setAttribute('data-editable', '1');
-      nameEl.title = 'Нажмите, чтобы изменить имя';
-
-      nameEl.addEventListener('click', function onClick(){
-        if(nameEl.querySelector('input')) return;
-        var current = (nameEl.textContent || '').trim();
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.value = current;
-        input.maxLength = 40;
-        input.style.width = Math.max(140, (current.length||1)*10) + 'px';
-        input.style.font = 'inherit';
-        input.style.color = 'inherit';
-        input.style.background = 'transparent';
-        input.style.border = '1px solid rgba(255,255,255,.3)';
-        input.style.borderRadius = '8px';
-        input.style.padding = '4px 8px';
-        input.style.outline = 'none';
-
-        nameEl.innerHTML = '';
-        nameEl.appendChild(input);
-        input.focus(); input.select();
-
-        function commit(save){
-          var newName = (input.value || '').trim() || current;
-          nameEl.innerHTML = '';
-          nameEl.textContent = save ? newName : current;
-          if(save){
-            var st = getState() || {};
-            if(!st) st = {};
-            st.profile = st.profile || {};
-            st.profile.name = newName;
-            setState(st);
-            var mirrors = document.querySelectorAll('[data-profile-name]');
-            for(var i=0;i<mirrors.length;i++){ mirrors[i].textContent = newName; }
-          }
-          // re-arm click
-          setTimeout(function(){ nameEl.addEventListener('click', onClick, { once: true }); }, 0);
-        }
-
-        input.addEventListener('keydown', function(e){
-          if(e.key === 'Enter'){ commit(true); }
-          else if(e.key === 'Escape'){ commit(false); }
-        });
-        input.addEventListener('blur', function(){ commit(true); }, { once: true });
-
-        nameEl.removeEventListener('click', onClick);
-      }, { once: true });
-    }
-
-    if(document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', wireEditableName);
-    } else {
-      wireEditableName();
-    }
-
-    // Also wire when user clicks nav to profile (without MutationObserver)
-    document.addEventListener('click', function(e){
-      var nav = e.target && e.target.closest ? e.target.closest('.nav-btn') : null;
-      if(nav && nav.dataset && nav.dataset.view === 'view-profile'){
-        setTimeout(wireEditableName, 60);
-      }
-    }, true);
-  }catch(e){
-    // swallow to avoid blocking load in strict browsers
-    try{ console.warn('Yandex patch error:', e); }catch(_){}
-  }
-})();
-</script>
-<!-- === /PATCH: Yandex fix === -->
-
-
-<script>
-/* kbfix: visualViewport */
-(function(){
-  function setVH(){
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', vh + 'px');
-  }
-  setVH();
-  window.addEventListener('resize', setVH, {passive:true});
-  window.addEventListener('orientationchange', setVH, {passive:true});
-
-  function isInput(el){
-    return el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
-  }
-  function toggleKB(open){
-    document.body.classList.toggle('kb-open', !!open);
-    if(open){
-      try{
-        var messages = document.getElementById('messages');
-        if(messages){ messages.scrollTop = messages.scrollHeight; }
-      }catch(e){}
-    }
-  }
-
-  var vv = window.visualViewport;
-  function updateKB(){
-    if(!vv){ return; }
-    var kb = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
-    document.documentElement.style.setProperty('--kb', kb + 'px');
-    toggleKB(kb > 0);
-  }
-  if(vv){
-    vv.addEventListener('resize', updateKB, {passive:true});
-    vv.addEventListener('scroll', updateKB, {passive:true});
-    updateKB();
-  }
-
-  document.addEventListener('focusin', function(e){
-    if(isInput(e.target)){ setTimeout(updateKB, 50); setTimeout(updateKB, 250); }
-  }, {passive:true});
-  document.addEventListener('focusout', function(e){
-    if(isInput(e.target)){ setTimeout(updateKB, 50); setTimeout(updateKB, 250); }
-  }, {passive:true});
-})();
-</script>
-
-
-<script>
-// boot-awards: recompute streak & awards on startup
-(function(){
-  const STORAGE_KEY = 'habit_traker_demo_v3';
-  function getState(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null'); }catch(e){ return null; } }
-  function setState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch(e){} }
-  function isoDate(d){ const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return t.toISOString().slice(0,10); }
-  function computeStreakFromState(s){
+  function renderProfile(){
     try{
-      let streak = 0;
-      const d = new Date();
-      while(true){
-        const key = isoDate(d);
-        const anyDone = (s?.habits||[]).some(h => Array.isArray(h?.days) && h.days.includes(key));
-        if(anyDone){ streak++; d.setDate(d.getDate()-1); } else { break; }
+      profileNameEl.textContent = state?.profile?.name || 'Гость';
+      const src = state?.profile?.avatar || '';
+      if(src){
+        avatarImg.src = src;
+        avatarImg.classList.remove('hidden');
+        avatarPlaceholder.style.display = 'none';
+      } else {
+        avatarImg.src = '';
+        avatarImg.classList.add('hidden');
+        avatarPlaceholder.style.display = 'grid';
       }
-      return streak;
-    }catch(e){ return 0; }
+      const s = computeStreak();
+      state.profile.streak = s;
+      saveState(state);
+      profileStreakEl.textContent = 'Streak: ' + s;
+    }catch(e){}
   }
+
+  function computeProgress(h){
+    const elapsed = Math.max(1, daysBetween(h.start, isoDate(new Date())));
+    const total = h.targetDays ? Math.max(1, h.targetDays) : elapsed;
+    const done = Math.min(h.days.length, total);
+    const pct = Math.min(100, Math.round(done/total*100));
+    return {elapsed, total, done, pct};
+  }
+
+  function setNavBadge(doneToday){
+    const navBadge = document.querySelector('#nav-1 .nav-badge'); if(!navBadge) return;
+    try{
+      const today=isoDate(new Date());
+      const lit = sessionStorage.getItem('badgeLitDate') === today;
+      navBadge.style.display = (doneToday && lit) ? 'block' : 'none';
+    } catch(e){
+      navBadge.style.display = doneToday ? 'block' : 'none';
+    }
+  }
+
+  function renderTrash(){
+    if(!trashPanel || !trashList) return;
+    if(!state.trash || state.trash.length===0){
+      trashPanel.style.display='none';
+      trashList.textContent='Пусто';
+      return;
+    }
+    trashPanel.style.display='block';
+    trashList.innerHTML='';
+    state.trash.forEach(h=>{
+      const row = document.createElement('div');
+      row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='8px 0';
+      const left = document.createElement('div'); left.textContent = h.name; left.className='sub';
+      const btn = document.createElement('button'); btn.className='icon-btn'; btn.textContent='Восстановить';
+      btn.addEventListener('click', ()=> restoreHabit(h.id));
+      row.appendChild(left); row.appendChild(btn);
+      trashList.appendChild(row);
+    });
+  }
+
+  function deleteHabit(id){
+    const idx = state.habits.findIndex(h=>h.id===id);
+    if(idx<0) return;
+    const [removed] = state.habits.splice(idx,1);
+    state.trash.unshift(removed);
+    state.currentHabitId = state.habits.length ? state.habits[0].id : null;
+    saveState(state);
+    renderAll(); renderTrash();
+  }
+  function restoreHabit(id){
+    const idx = state.trash.findIndex(h=>h.id===id);
+    if(idx<0) return;
+    const [restored] = state.trash.splice(idx,1);
+    state.habits.unshift(restored);
+    state.currentHabitId = restored.id;
+    saveState(state);
+    renderAll(); renderTrash();
+  }
+
+  function isCompleted(h){
+    return !!(h && typeof h.targetDays==='number' && Array.isArray(h.days) && h.days.length >= Math.max(1, h.targetDays));
+  }
+
+  // Render ALL habits - ОБНОВЛЕННАЯ ФУНКЦИЯ
+  function renderAll(){
+    listRoot.innerHTML='';
+    if(!state.habits.length){
+      const empty = document.createElement('div');
+      empty.className='sub';
+      empty.textContent='Нет привычек. Добавьте через чат.';
+      listRoot.appendChild(empty);
+      setNavBadge(false);
+      renderTrash();
+      return;
+    }
+
+    let anyDoneToday = false;
+    const incomplete = state.habits.filter(h => !isCompleted(h));
+    const complete   = state.habits.filter(h =>  isCompleted(h));
+    
+    [...incomplete, ...complete].forEach(h=>{
+      const {total, done, pct} = computeProgress(h);
+      const card = document.createElement('div'); card.className='habit-card';
+
+      if (isCompleted(h)) {
+        card.classList.add('habit-done');
+      }
+
+      // Title row
+      const title = document.createElement('div'); title.className='habit-title';
+      const titleWrap = document.createElement('div'); titleWrap.style.flex='1';
+      const nameEl = document.createElement('div'); nameEl.style.fontWeight='700'; nameEl.style.fontSize='16px'; nameEl.textContent = h.name;
+      const durationEl = document.createElement('div'); durationEl.className='sub'; durationEl.textContent = `Срок: ${total} дн. | Прогресс: ${pct}%`;
+      titleWrap.appendChild(nameEl); titleWrap.appendChild(durationEl);
+
+      const right = document.createElement('div'); right.style.textAlign='right';
+      const pctEl = document.createElement('div'); pctEl.className='sub'; pctEl.textContent = `${done} / ${total}`;
+      right.appendChild(pctEl);
+
+      const delBtn = document.createElement('button'); delBtn.className='icon-btn'; delBtn.title='Удалить привычку'; delBtn.textContent='🗑️';
+      delBtn.style.marginLeft='8px';
+      delBtn.addEventListener('click', ()=>{ if(confirm('Удалить привычку в корзину?')) deleteHabit(h.id); });
+
+      title.appendChild(titleWrap); title.appendChild(right); title.appendChild(delBtn);
+      card.appendChild(title);
+
+      // Progress
+      const progress = document.createElement('div'); progress.className='progress';
+      const bar = document.createElement('div'); bar.className='bar';
+      const fill = document.createElement('i'); fill.style.width = pct+'%';
+      bar.appendChild(fill);
+      const sub = document.createElement('div'); sub.className='sub'; sub.textContent = `${done} из ${total} дней выполнено`;
+      progress.appendChild(bar); progress.appendChild(sub);
+      card.appendChild(progress);
+
+      // Today row - ОБНОВЛЕНО: показываем задание из плана
+      const todayRow = document.createElement('div'); todayRow.className='today-task';
+      const todayKey = isoDate(new Date());
+      const doneToday = h.days.includes(todayKey); if(doneToday) anyDoneToday = true;
+      
+      const check = document.createElement('div'); check.className='check today-check' + (doneToday ? ' done' : '');
+      check.textContent = '✔';
+      check.addEventListener('click', ()=>{
+        if(h.days.includes(todayKey)){ h.days = h.days.filter(d=>d!==todayKey); } else { h.days.push(todayKey); }
+        saveState(state); renderAll();
+      });
+      
+      const ti = document.createElement('div'); ti.className='task-info';
+      const tt = document.createElement('div'); tt.style.fontWeight='700'; 
+      
+      // ОТОБРАЖЕНИЕ ЗАДАНИЯ ИЗ ПЛАНА
+      const todayTask = getTodayTask(h);
+      tt.textContent = todayTask;
+      
+      const ts = document.createElement('div'); ts.className='sub'; 
+      ts.textContent = doneToday ? 'Выполнено ✔' : 'Не выполнено ✖';
+      
+      ti.appendChild(tt); ti.appendChild(ts);
+      todayRow.appendChild(check); todayRow.appendChild(ti);
+      card.appendChild(todayRow);
+
+      // Calendar toggle
+      const toggleWrap = document.createElement('div'); toggleWrap.style.marginTop='10px'; toggleWrap.style.display='flex'; toggleWrap.style.gap='8px';
+      const toggleBtn = document.createElement('button'); toggleBtn.className='icon-btn'; toggleBtn.textContent='Календарь';
+      toggleWrap.appendChild(toggleBtn);
+      card.appendChild(toggleWrap);
+
+      // Calendar
+      const cal = document.createElement('div'); cal.className='calendar hidden';
+      card.appendChild(cal);
+
+      let calRendered = false;
+      toggleBtn.addEventListener('click', ()=>{
+        cal.classList.toggle('hidden');
+        if(!calRendered){ renderCalendar(h, cal); calRendered = true; }
+      });
+      
+      listRoot.appendChild(card);
+    });
+
+    setNavBadge(anyDoneToday);
+    renderTrash();
+    renderProfile();
+  }
+
+  // Avatar upload handler
+  if(avatarLabel && avatarInput){
+    avatarLabel.addEventListener('click', ()=> avatarInput.click());
+    avatarInput.addEventListener('change', (e)=>{
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        try{
+          state.profile.avatar = dataUrl;
+          saveState(state);
+        }catch(err){}
+        renderProfile();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Nav
+  document.addEventListener('click', (ev)=>{
+    const navBtn = ev.target.closest('.nav-btn');
+    if(navBtn && navBtn.dataset && navBtn.dataset.view) showView(navBtn.dataset.view);
+  });
+
+  // Инициализация приложения
+  renderAll();
+  showView('view-habit');
+  initChat(); // Инициализируем чат
+
+  // Обработчики для чата
+  sendBtn.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
+  });
+
+  // При переходе на вкладку чата сбрасываем состояние
+  document.addEventListener('click', (ev) => {
+    const navBtn = ev.target.closest('.nav-btn');
+    if (navBtn && navBtn.dataset.view === 'view-chat') {
+      setTimeout(initChat, 100);
+    }
+  });
+
+  // Инициализация профиля
+  renderProfile();
   try{
-    const s = getState() || {profile:{}, habits:[]};
-    s.profile = s.profile || {};
-    const newStreak = computeStreakFromState(s);
-    if(typeof newStreak === 'number' && newStreak >= 0){
-      s.profile.streak = newStreak;
-      setState(s);
+    const askedKey = 'profile_name_asked_v1';
+    const askedBefore = localStorage.getItem(askedKey) === '1';
+    if(!askedBefore){
+      const nm = prompt('Как тебя зовут?');
+      if(nm && nm.trim()){
+        state.profile.name = nm.trim();
+        saveState(state);
+      }
+      localStorage.setItem(askedKey, '1');
+      renderProfile();
     }
   }catch(e){}
 
-  // Trigger UI/badges re-render ASAP
+  // Debug badge
   try{
-    if(typeof window.renderAll === 'function'){ window.renderAll(); }
-    if(typeof window.renderProfile === 'function'){ window.renderProfile(); }
-    // Fallback notify
-    document.dispatchEvent(new CustomEvent('badges:refresh'));
+    const badge = document.createElement('div');
+    badge.textContent = 'JS OK';
+    badge.style.position='fixed'; badge.style.right='10px'; badge.style.bottom='10px';
+    badge.style.background='rgba(0,0,0,0.5)'; badge.style.padding='6px 10px'; badge.style.borderRadius='8px'; badge.style.fontSize='12px';
+    badge.style.zIndex='9999';
+    document.body.appendChild(badge);
+    setTimeout(()=>badge.remove(), 1500);
   }catch(e){}
 })();
 </script>
