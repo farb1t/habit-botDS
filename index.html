@@ -1,198 +1,193 @@
-<!-- index.html (клиент: один файл, простой чат с потоковой загрузкой) -->
+<!-- index.html (клиентский чат, один файл) -->
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Habit Chat</title>
+  <meta charset="utf-8" />
+  <title>Habit Chat (Mistral + Workers)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --bg:#0b1020; --card:#111936; --ink:#e9ecf1; --muted:#a9b4cc; --accent:#5aa9ff; }
-    html,body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial;}
-    .wrap { max-width: 840px; margin: 0 auto; padding: 16px; height: 100%; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
-    header { display:flex; align-items:center; gap:10px; }
-    header h1 { font-size: 18px; margin:0; }
-    #log { background: var(--card); border-radius: 14px; padding: 12px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
-    .msg { display:flex; gap:10px; padding: 10px 8px; }
-    .msg.user { justify-content:flex-end; }
-    .msg .bubble { max-width: 70%; padding: 10px 12px; border-radius: 12px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
-    .msg.user .bubble { background: #1d2b5a; }
-    .msg.assistant .bubble { background: #0f254d; }
-    .role { font-size: 11px; color: var(--muted); margin: 0 0 4px 2px; }
-    form { display:flex; gap:10px; }
-    textarea { flex:1; resize: none; min-height: 56px; max-height: 160px; padding: 12px; border-radius: 12px; border:1px solid #243257; background:#0d1734; color:var(--ink); outline:none; }
-    button { background: var(--accent); color:#051126; border:none; padding: 0 16px; border-radius: 12px; font-weight: 600; cursor: pointer; }
-    button[disabled]{ opacity:.6; cursor: not-allowed; }
-    .hint { color: var(--muted); font-size: 12px; }
-    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; display:inline-block; animation: spin .8s linear infinite; vertical-align: -2px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    a { color: #a7d0ff; }
+    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#94a3b8; --accent:#22d3ee; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:linear-gradient(180deg,#0b1220,#0f172a); color:var(--text); font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; display:flex; min-height:100vh; }
+    .wrap { margin:auto; width:min(900px,100%); padding:24px; }
+    .card { background:rgba(17,24,39,.75); backdrop-filter: blur(6px); border:1px solid rgba(148,163,184,.15); border-radius:16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    header { padding:16px 20px; border-bottom:1px solid rgba(148,163,184,.15); display:flex; align-items:center; gap:12px; }
+    header .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+    header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
+    #log { height:60vh; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:14px; scroll-behavior:smooth; }
+    .msg { max-width:80%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
+    .me { align-self:flex-end; background:#1f2937; border:1px solid rgba(148,163,184,.2); }
+    .ai { align-self:flex-start; background:#0b1325; border:1px solid rgba(34,211,238,.25); }
+    .muted { color:var(--muted); font-size:12px; }
+    form { display:flex; gap:10px; padding:14px; border-top:1px solid rgba(148,163,184,.15); background:#0b1220; }
+    textarea { flex:1; resize:none; max-height:140px; min-height:48px; padding:12px; border-radius:12px; border:1px solid rgba(148,163,184,.25); background:#0a0f1c; color:var(--text); }
+    button { padding:12px 16px; border-radius:12px; border:1px solid rgba(148,163,184,.25); background:linear-gradient(180deg,#0ea5b7,#0891a5); color:white; font-weight:600; cursor:pointer; }
+    .row { display:flex; align-items:center; gap:10px; padding:0 14px 12px; color:var(--muted); }
+    .row label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+    .input { display:flex; gap:10px; align-items:center; }
+    .tiny { font-size:12px; }
+    .pill { font-size:12px; padding:4px 8px; border:1px solid rgba(148,163,184,.25); border-radius:999px; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5v14" stroke="#5aa9ff" stroke-width="2" stroke-linecap="round"/></svg>
-      <h1>Habit Chat · Mistral</h1>
-    </header>
+    <div class="card">
+      <header>
+        <div class="dot"></div>
+        <h1>Помощник привычек · Mistral</h1>
+        <span class="pill" id="mode-pill">SSE</span>
+      </header>
 
-    <div id="log" aria-live="polite"></div>
+      <div id="log" aria-live="polite"></div>
 
-    <form id="composer">
-      <textarea id="input" placeholder="Напишите сообщение… (каждое отправляется в API)"></textarea>
-      <button id="send" type="submit">Отправить</button>
-    </form>
-    <div class="hint">Каждое сообщение уходит на сервер и получает ответ от модели. Системный промт встроен на бэке.</div>
+      <div class="row">
+        <label><input type="checkbox" id="stream" checked> Поток (SSE)</label>
+        <span class="tiny">Каждое сообщение отправляется на API и ответ выводится сразу</span>
+      </div>
+
+      <form id="form">
+        <textarea id="input" placeholder="Напишите сообщение… (например: «Начать»)" required></textarea>
+        <button type="submit">Отправить</button>
+      </form>
+    </div>
   </div>
 
   <script>
-    // Бэк расположен на том же домене/поддомене (workers.dev или вашей привязке)
-    const API_BASE = ""; // пусто = текущий origin. Итого POST на /chat/stream
+    // ======= НАСТРОЙКИ =======
+    // Замените на ваш деплой Workers:
+    const WORKER_BASE = location.origin.includes("workers.dev") || location.host.endsWith(".workers.dev")
+      ? location.origin
+      : "https://habit-proxyds.konayevna.workers.dev";
 
-    const logEl = document.getElementById("log");
-    const form = document.getElementById("composer");
+    const CHAT_URL = WORKER_BASE + "/chat";
+    const STREAM_URL = WORKER_BASE + "/chat/stream";
+
+    // ======= ПРОСТОЙ КЛИЕНТ ЧАТА С ИСТОРИЕЙ =======
+    const log = document.getElementById("log");
+    const form = document.getElementById("form");
     const input = document.getElementById("input");
-    const sendBtn = document.getElementById("send");
+    const streamToggle = document.getElementById("stream");
+    const modePill = document.getElementById("mode-pill");
 
-    // Память чата на фронте — отправляем целиком при каждом запросе
-    const history = []; // [{role:"user"|"assistant", content:"..."}]
+    // Храним минимальную историю: [{role, content}]
+    const history = [];
 
-    function addMessage(role, content, temporary=false) {
-      const msg = document.createElement("div");
-      msg.className = `msg ${role}`;
-      msg.innerHTML = `
-        <div class="bubble">
-          <div class="role">${role === "user" ? "Вы" : "Помощник"}</div>
-          <div class="content">${escapeHtml(content)}</div>
-        </div>
-      `;
-      if (temporary) msg.dataset.temp = "1";
-      logEl.appendChild(msg);
-      scrollToBottom();
-      return msg.querySelector(".content");
+    function addMsg(role, content) {
+      const div = document.createElement("div");
+      div.className = "msg " + (role === "user" ? "me" : "ai");
+      div.textContent = content;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
     }
 
-    function updateLastAssistantContent(text) {
-      const nodes = [...logEl.querySelectorAll('.msg.assistant .content')];
-      for (let i = nodes.length - 1; i >= 0; i--) {
-        const parent = nodes[i].closest('.msg.assistant');
-        if (parent && parent.dataset.temp === "1") {
-          nodes[i].textContent = text;
-          break;
-        }
-      }
-      scrollToBottom();
-    }
-
-    function finalizeTempAssistant() {
-      const temp = logEl.querySelectorAll('.msg.assistant[data-temp="1"]');
-      temp.forEach(el => el.removeAttribute('data-temp'));
-    }
-
-    function setBusy(busy) {
-      input.disabled = busy;
-      sendBtn.disabled = busy;
-      sendBtn.innerHTML = busy ? '<span class="spinner"></span>' : 'Отправить';
-    }
-
-    function scrollToBottom() {
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-    }
-
-    async function sendMessage(text) {
-      const userText = text.trim();
-      if (!userText) return;
-
-      // Добавляем и показываем юзер-сообщение
-      history.push({ role: "user", content: userText });
-      addMessage("user", userText);
-
-      // Подготовка времового узла ассистента
-      const assistantNode = addMessage("assistant", "", true);
-      setBusy(true);
-
-      // Собираем полезную историю (без system — сервер добавит сам)
-      const payload = { messages: history };
-
-      try {
-        // Потоковый вызов
-        const resp = await fetch(API_BASE + "/chat/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok || !resp.body) {
-          throw new Error("Bad response from server");
-        }
-
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        let assistantText = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          // Разбираем SSE чанки
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            const lines = part.split("\n");
-            for (const line of lines) {
-              if (!line.startsWith("data:")) continue;
-              const data = line.slice(5).trim();
-              if (!data || data === "[DONE]") continue;
-
-              let json;
-              try { json = JSON.parse(data); } catch { continue; }
-
-              // Формат Mistral SSE: { choices: [{ delta: { content: "..." } }] }
-              const delta = json?.choices?.[0]?.delta?.content ?? "";
-              if (delta) {
-                assistantText += delta;
-                updateLastAssistantContent(assistantText);
-              }
-            }
-          }
-        }
-
-        // Завершение
-        finalizeTempAssistant();
-        if (assistantText.trim().length === 0) {
-          assistantText = "(пустой ответ)";
-          updateLastAssistantContent(assistantText);
-        }
-        history.push({ role: "assistant", content: assistantText });
-      } catch (err) {
-        updateLastAssistantContent("Ошибка: " + (err?.message || String(err)));
-        finalizeTempAssistant();
-        history.push({ role: "assistant", content: "Ошибка соединения с сервером." });
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    // Отправка формы
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const text = input.value;
-      input.value = "";
-      sendMessage(text);
+    streamToggle.addEventListener("change", () => {
+      modePill.textContent = streamToggle.checked ? "SSE" : "JSON";
     });
 
-    // Приветствие — единичное слово, чтобы модель сама задала 3 уточняющих вопроса
-    (function greet() {
-      addMessage("assistant", "👋 Привет! Я помогу сформировать привычку. Напишите «Начать», чтобы приступить.");
-    })();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+
+      history.push({ role: "user", content: text });
+      addMsg("user", text);
+      input.value = "";
+
+      if (streamToggle.checked) {
+        await sendStream();
+      } else {
+        await sendJSON();
+      }
+    });
+
+    async function sendJSON() {
+      // Обычный POST /chat
+      const body = {
+        messages: history.slice(-50), // усечение истории (пример)
+        temperature: 0.4,
+        max_tokens: 1200
+      };
+
+      const res = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        addMsg("assistant", "Ошибка запроса: " + err);
+        return;
+      }
+
+      const data = await res.json();
+      const content = data?.content || "";
+      history.push({ role: "assistant", content });
+      addMsg("assistant", content);
+    }
+
+    async function sendStream() {
+      // Потоковый POST /chat/stream (SSE)
+      const body = {
+        messages: history.slice(-50),
+        temperature: 0.4,
+        max_tokens: 1200
+      };
+
+      const res = await fetch(STREAM_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok || !res.body) {
+        const err = await res.text();
+        addMsg("assistant", "Ошибка потока: " + err);
+        return;
+      }
+
+      // Накапливаем стрим в одном сообщении
+      let acc = "";
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      // временный визуальный контейнер
+      const liveDiv = document.createElement("div");
+      liveDiv.className = "msg ai";
+      liveDiv.textContent = "…";
+      log.appendChild(liveDiv);
+      log.scrollTop = log.scrollHeight;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        // Протокол у Mistral совместим со стандартным SSE: линии "data: {...}" + [DONE]
+        for (const line of chunk.split(/\r?\n/)) {
+          if (!line.startsWith("data:")) continue;
+          const dataPart = line.slice(5).trim();
+          if (dataPart === "[DONE]") continue;
+          try {
+            const evt = JSON.parse(dataPart);
+            const delta = evt?.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              acc += delta;
+              liveDiv.textContent = acc;
+              log.scrollTop = log.scrollHeight;
+            }
+          } catch {
+            // игнорируем некорректные чанки
+          }
+        }
+      }
+
+      history.push({ role: "assistant", content: acc });
+    }
+
+    // Первое автоматическое сообщение пользователя (опционально):
+    // history.push({ role: "user", content: "Начать" });
+    // addMsg("user", "Начать");
+    // sendStream();
   </script>
 </body>
 </html>
