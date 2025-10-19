@@ -1,193 +1,306 @@
-<!-- index.html — фронт (фикс: удаляем лишние * и повышаем max_tokens на клиенте) -->
-<!doctype html>
-<html lang="ru">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Habit Chat (Mistral + Workers)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#94a3b8; --accent:#22d3ee; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:linear-gradient(180deg,#0b1220,#0f172a); color:var(--text); font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; display:flex; min-height:100vh; }
-    .wrap { margin:auto; width:min(900px,100%); padding:24px; }
-    .card { background:rgba(17,24,39,.75); backdrop-filter: blur(6px); border:1px solid rgba(148,163,184,.15); border-radius:16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
-    header { padding:16px 20px; border-bottom:1px solid rgba(148,163,184,.15); display:flex; align-items:center; gap:12px; }
-    header .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
-    header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
-    #log { height:60vh; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:14px; scroll-behavior:smooth; }
-    .msg { max-width:80%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
-    .me { align-self:flex-end; background:#1f2937; border:1px solid rgba(148,163,184,.2); }
-    .ai { align-self:flex-start; background:#0b1325; border:1px solid rgba(34,211,238,.25); }
-    .muted { color:var(--muted); font-size:12px; }
-    form { display:flex; gap:10px; padding:14px; border-top:1px solid rgba(148,163,184,.15); background:#0b1220; }
-    textarea { flex:1; resize:none; max-height:160px; min-height:48px; padding:12px; border-radius:12px; border:1px solid rgba(148,163,184,.25); background:#0a0f1c; color:var(--text); }
-    button { padding:12px 16px; border-radius:12px; border:1px solid rgba(148,163,184,.25); background:linear-gradient(180deg,#0ea5b7,#0891a5); color:white; font-weight:600; cursor:pointer; }
-    .row { display:flex; align-items:center; gap:10px; padding:0 14px 12px; color:var(--muted); }
-    .row label { display:flex; align-items:center; gap:6px; cursor:pointer; }
-    .pill { font-size:12px; padding:4px 8px; border:1px solid rgba(148,163,184,.25); border-radius:999px; }
-  </style>
+    <title>Habit Builder AI</title>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        
+        .message {
+            margin: 15px 0;
+            padding: 15px 20px;
+            border-radius: 18px;
+            line-height: 1.5;
+            max-width: 80%;
+            position: relative;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .user-message {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        
+        .bot-message {
+            background: white;
+            border: 1px solid #e1e5e9;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e1e5e9;
+            display: flex;
+            gap: 10px;
+        }
+        
+        input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e1e5e9;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            border-color: #4facfe;
+        }
+        
+        button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .typing-indicator {
+            display: inline-block;
+            padding: 10px 20px;
+            background: white;
+            border-radius: 18px;
+            border-bottom-left-radius: 5px;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .typing-dots {
+            display: inline-block;
+        }
+        
+        .typing-dots span {
+            animation: typing 1.4s infinite;
+            opacity: 0.6;
+        }
+        
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; }
+            30% { opacity: 1; }
+        }
+        
+        .timestamp {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-top: 5px;
+            text-align: right;
+        }
+        
+        .bot-message .timestamp {
+            text-align: left;
+        }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <header>
-        <div class="dot"></div>
-        <h1>Помощник привычек · Mistral</h1>
-        <span class="pill" id="mode-pill">SSE</span>
-      </header>
-
-      <div id="log" aria-live="polite"></div>
-
-      <div class="row">
-        <label><input type="checkbox" id="stream" checked> Поток (SSE)</label>
-        <span style="font-size:12px;color:var(--muted)">Каждое сообщение уходит в API, ответ всегда отображается в чате</span>
-      </div>
-
-      <form id="form">
-        <textarea id="input" placeholder="Напишите сообщение… (например: «Начать»)" required></textarea>
-        <button type="submit">Отправить</button>
-      </form>
+    <div class="chat-container">
+        <div class="header">
+            <h1>Habit Builder AI</h1>
+            <p>Помогаю создавать устойчивые привычки с научным подходом</p>
+        </div>
+        
+        <div class="messages" id="messages">
+            <div class="message bot-message">
+                Привет! Я помогу вам сформировать полезную привычку. 🚀
+                <br><br>
+                Расскажите, какую <strong>конкретную</strong> привычку вы хотите развить? 
+                Например: "пить 2 литра воды в день", "читать 30 минут ежедневно", "бегать 5 км 3 раза в неделю"
+                <div class="timestamp">только что</div>
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Опишите свою цель..." autocomplete="off">
+            <button id="sendBtn">Отправить</button>
+        </div>
     </div>
-  </div>
 
-  <script>
-    // ======= НАСТРОЙКИ =======
-    const WORKER_BASE = location.origin.includes("workers.dev") || location.host.endsWith(".workers.dev")
-      ? location.origin
-      : "https://YOUR-WORKER-NAME.workers.dev";
-    const CHAT_URL = WORKER_BASE + "/chat";
-    const STREAM_URL = WORKER_BASE + "/chat/stream";
-
-    const log = document.getElementById("log");
-    const form = document.getElementById("form");
-    const input = document.getElementById("input");
-    const streamToggle = document.getElementById("stream");
-    const modePill = document.getElementById("mode-pill");
-
-    const history = [];
-
-    // ——— Удаляем лишние звездочки и markdown (жирный/курсив/инлайн-код) ———
-    function cleanMarkdown(text) {
-      if (!text) return "";
-      // убираем **bold**
-      text = text.replace(/\*\*(.*?)\*\*/g, "$1");
-      // убираем *italic*
-      text = text.replace(/(^|[\s(])\*(.*?)\*([\s).,!?:;]|$)/g, "$1$2$3");
-      // слотные одинокие звёздочки
-      text = text.replace(/\*/g, "");
-      // инлайн-код `...`
-      text = text.replace(/`([^`]+)`/g, "$1");
-      // многоточия и двойные пробелы нормализуем
-      return text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-    }
-
-    function addMsg(role, content) {
-      const div = document.createElement("div");
-      div.className = "msg " + (role === "user" ? "me" : "ai");
-      div.textContent = content;
-      log.appendChild(div);
-      log.scrollTop = log.scrollHeight;
-    }
-
-    streamToggle.addEventListener("change", () => {
-      modePill.textContent = streamToggle.checked ? "SSE" : "JSON";
-    });
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
-
-      history.push({ role: "user", content: text });
-      addMsg("user", text);
-      input.value = "";
-
-      if (streamToggle.checked) {
-        await sendStream();
-      } else {
-        await sendJSON();
-      }
-    });
-
-    async function sendJSON() {
-      const body = {
-        messages: history.slice(-50),
-        temperature: 0.4,
-        max_tokens: 3000  // больше токенов — меньше шансов на обрыв
-      };
-
-      const res = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        addMsg("assistant", "Ошибка запроса: " + err);
-        return;
-      }
-
-      const data = await res.json();
-      const content = cleanMarkdown(data?.content || "");
-      history.push({ role: "assistant", content });
-      addMsg("assistant", content);
-    }
-
-    async function sendStream() {
-      const body = {
-        messages: history.slice(-50),
-        temperature: 0.4,
-        max_tokens: 3000
-      };
-
-      const res = await fetch(STREAM_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok || !res.body) {
-        const err = await res.text();
-        addMsg("assistant", "Ошибка потока: " + err);
-        return;
-      }
-
-      let acc = "";
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      const liveDiv = document.createElement("div");
-      liveDiv.className = "msg ai";
-      liveDiv.textContent = "…";
-      log.appendChild(liveDiv);
-      log.scrollTop = log.scrollHeight;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-
-        for (const line of chunk.split(/\r?\n/)) {
-          if (!line.startsWith("data:")) continue;
-          const dataPart = line.slice(5).trim();
-          if (!dataPart || dataPart === "[DONE]") continue;
-          try {
-            const evt = JSON.parse(dataPart);
-            const delta = evt?.choices?.[0]?.delta?.content ?? "";
-            if (delta) {
-              acc += delta;
-              // показываем очищенный текст "на лету"
-              liveDiv.textContent = cleanMarkdown(acc);
-              log.scrollTop = log.scrollHeight;
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        
+        // Замените на ваш Worker URL
+        const WORKER_URL = 'https://habit-proxyds.konayevna.workers.dev/chat';
+        
+        let conversationHistory = [
+            {
+                role: 'user',
+                content: 'Привет! Помоги мне создать привычку.'
             }
-          } catch { /* пропускаем не-JSON */ }
-        }
-      }
+        ];
 
-      acc = cleanMarkdown(acc);
-      history.push({ role: "assistant", content: acc });
-    }
-  </script>
+        function addMessage(content, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            
+            const timestamp = new Date().toLocaleTimeString('ru-RU', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            messageDiv.innerHTML = `
+                ${content}
+                <div class="timestamp">${timestamp}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot-message typing-indicator';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = `
+                Ищу оптимальное решение <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+                <div class="timestamp">печатает</div>
+            `;
+            messagesDiv.appendChild(typingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        async function sendMessage() {
+            const content = userInput.value.trim();
+            if (!content) return;
+
+            addMessage(content, true);
+            userInput.value = '';
+            sendBtn.disabled = true;
+            
+            conversationHistory.push({ role: 'user', content });
+            showTypingIndicator();
+
+            try {
+                const response = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        message: conversationHistory 
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                hideTypingIndicator();
+                
+                if (data.reply) {
+                    addMessage(data.reply);
+                    conversationHistory.push({ role: 'assistant', content: data.reply });
+                } else {
+                    addMessage('Произошла ошибка при обработке запроса. Попробуйте еще раз.');
+                }
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('Ошибка соединения с сервером. Проверьте ваш интернет и попробуйте еще раз.');
+                console.error('Error:', error);
+            }
+
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        userInput.focus();
+    </script>
 </body>
 </html>
